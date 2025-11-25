@@ -24,10 +24,6 @@ static void error_at(Parser* parser, Token* token, const char* message) {
     fprintf(stderr, ": %s\n", message);
 }
 
-static void error(Parser* parser, const char* message) {
-    error_at(parser, &parser->previous, message);
-}
-
 static void error_at_current(Parser* parser, const char* message) {
     error_at(parser, &parser->current, message);
 }
@@ -69,10 +65,8 @@ static void synchronize(Parser* parser) {
     parser->panic_mode = 0;
     
     while (parser->current.type != TOKEN_EOF) {
-        // Si encontramos un NL, podemos intentar continuar
         if (parser->previous.type == TOKEN_NL) return;
         
-        // Si encontramos el inicio de una declaración, podemos continuar
         switch (parser->current.type) {
             case TOKEN_FUN:
             case TOKEN_IF:
@@ -81,7 +75,7 @@ static void synchronize(Parser* parser) {
             case TOKEN_END:
                 return;
             default:
-                ; // Continuar avanzando
+                ;
         }
         
         advance(parser);
@@ -104,16 +98,20 @@ static void comando(Parser* parser);
 static void cmdif(Parser* parser);
 static void cmdwhile(Parser* parser);
 static void cmdatrib_o_llamada(Parser* parser);
-static void cmdreturn(Parser* parser);
+static void cmdreturn_stmt(Parser* parser);
 static void listaexp(Parser* parser);
-static void exp(Parser* parser);
-static void exp_and(Parser* parser);
-static void exp_rel(Parser* parser);
-static void exp_add(Parser* parser);
-static void exp_mul(Parser* parser);
-static void exp_unary(Parser* parser);
-static void exp_postfix(Parser* parser);
-static void exp_primary(Parser* parser);
+
+// Expresiones - renombradas para evitar conflicto con math.h
+static void expression(Parser* parser);
+static void expr_or(Parser* parser);
+static void expr_and(Parser* parser);
+static void expr_rel(Parser* parser);
+static void expr_add(Parser* parser);
+static void expr_mul(Parser* parser);
+static void expr_unary(Parser* parser);
+static void expr_postfix(Parser* parser);
+static void expr_primary(Parser* parser);
+
 static void nl(Parser* parser);
 
 // ==================== IMPLEMENTACIÓN ====================
@@ -127,7 +125,6 @@ void parser_init(Parser* parser, Lexer* lexer) {
     parser->current.lexeme = NULL;
     parser->current.string_value = NULL;
     
-    // Leer el primer token
     advance(parser);
 }
 
@@ -144,21 +141,17 @@ void parser_free(Parser* parser) {
 
 // programa -> { NL } decl { decl }
 static void programa(Parser* parser) {
-    // Consumir NL opcionales al inicio
     while (match(parser, TOKEN_NL)) {
         // Consumir saltos de línea iniciales
     }
     
-    // Debe haber al menos una declaración
     if (check(parser, TOKEN_EOF)) {
         error_at_current(parser, "El programa esta vacio");
         return;
     }
     
-    // Primera declaración obligatoria
     decl(parser);
     
-    // Declaraciones adicionales
     while (!check(parser, TOKEN_EOF) && !parser->had_error) {
         decl(parser);
     }
@@ -192,7 +185,6 @@ static void funcion(Parser* parser) {
     params(parser);
     consume(parser, TOKEN_RPAREN, "Se esperaba ')' despues de los parametros");
     
-    // Tipo de retorno opcional
     if (match(parser, TOKEN_COLON)) {
         tipo(parser);
     }
@@ -203,49 +195,61 @@ static void funcion(Parser* parser) {
     nl(parser);
 }
 
+
+// Función auxiliar para verificar si estamos al final de un bloque
+static int is_block_end(Parser* parser) {
+    return check(parser, TOKEN_END) ||
+           check(parser, TOKEN_ELSE) ||
+           check(parser, TOKEN_LOOP) ||
+           check(parser, TOKEN_EOF);
+}
+
 // bloque -> { declvar nl } { comando nl }
 static void bloque(Parser* parser) {
-    // Declaraciones de variables locales
-    while (check(parser, TOKEN_ID)) {
-        // Necesitamos mirar adelante para distinguir declvar de comando
-        // Una declvar tiene la forma ID ':' tipo
-        // Un comando puede ser ID '=' exp o ID '(' listaexp ')'
+    // Primero procesamos declaraciones de variables
+    // Una declaración de variable es: ID ':' tipo
+    // Un comando que empieza con ID puede ser: ID '=' exp o ID '(' listaexp ')'
+    
+    while (check(parser, TOKEN_ID) && !is_block_end(parser)) {
+        // Guardamos información del token actual para lookahead
+        // Necesitamos ver si después del ID viene ':'
         
-        // Guardamos la posición actual
-        Token saved = parser->current;
-        advance(parser);
+        // Avanzamos para ver qué sigue
+        advance(parser); // Consumimos el ID, ahora está en previous
         
         if (check(parser, TOKEN_COLON)) {
-            // Es una declaración de variable
-            // Retrocedemos (simulado: usamos el token guardado)
-            parser->current = saved;
-            // Necesitamos re-parsear desde el ID
-            // En realidad, como ya avanzamos, hacemos un truco:
-            // Sabemos que el previous tiene el ID, así que parseamos desde ahí
-            
-            // Realmente, para este caso, vamos a manejar de forma especial
-            // ya que ya consumimos el ID
-            consume(parser, TOKEN_COLON, "Se esperaba ':' en declaracion de variable");
+            // Es una declaración de variable: ID ':' tipo
+            advance(parser); // Consumir ':'
             tipo(parser);
             nl(parser);
         } else {
-            // No es declaración, retroceder y salir del loop
-            // Como no podemos retroceder fácilmente, usamos otro enfoque
-            // Vamos a terminar las declaraciones y procesar como comando
+            // No es declaración, es un comando
+            // El ID ya está en previous, necesitamos procesarlo como comando
+            // Pero ya consumimos el ID, así que procesamos el resto aquí
             
-            // Restaurar: simulamos poniendo current como si no hubiéramos avanzado
-            Token temp = parser->current;
-            parser->current = saved;
-            token_free(&temp);
+            if (match(parser, TOKEN_LPAREN)) {
+                // Es una llamada a función: ID '(' listaexp ')'
+                listaexp(parser);
+                consume(parser, TOKEN_RPAREN, "Se esperaba ')' en llamada a funcion");
+            } else {
+                // Es una asignación: ID var_suffix '=' exp
+                // var_suffix -> { '[' exp ']' }
+                while (match(parser, TOKEN_LBRACKET)) {
+                    expression(parser);
+                    consume(parser, TOKEN_RBRACKET, "Se esperaba ']'");
+                }
+                consume(parser, TOKEN_EQ, "Se esperaba '=' en asignacion");
+                expression(parser);
+            }
+            nl(parser);
+            
+            // Ahora procesamos el resto de los comandos normalmente
             break;
         }
     }
     
-    // Comandos
-    while (!check(parser, TOKEN_END) && 
-           !check(parser, TOKEN_ELSE) && 
-           !check(parser, TOKEN_LOOP) &&
-           !check(parser, TOKEN_EOF)) {
+    // Procesamos los comandos restantes
+    while (!is_block_end(parser) && !parser->had_error) {
         comando(parser);
         if (!parser->panic_mode) {
             nl(parser);
@@ -253,18 +257,29 @@ static void bloque(Parser* parser) {
     }
 }
 
-// nl -> NL { NL }
+// nl -> NL { NL } | EOF
 static void nl(Parser* parser) {
-    consume(parser, TOKEN_NL, "Se esperaba salto de linea");
-    while (match(parser, TOKEN_NL)) {
-        // Consumir NL adicionales
+    // Si estamos al final del archivo, no exigir salto de línea
+    if (check(parser, TOKEN_EOF)) {
+        return;
     }
+    
+    // Si hay salto de línea, consumirlo
+    if (match(parser, TOKEN_NL)) {
+        // Consumir saltos de línea adicionales
+        while (match(parser, TOKEN_NL)) {
+            // Continuar
+        }
+        return;
+    }
+    
+    // Si no hay salto de línea ni EOF, es un error
+    error_at_current(parser, "Se esperaba salto de linea");
 }
-
 // params -> /* vacio */ | parametro { ',' parametro }
 static void params(Parser* parser) {
     if (check(parser, TOKEN_RPAREN)) {
-        return; // Lista vacía
+        return;
     }
     
     parametro(parser);
@@ -285,7 +300,7 @@ static void parametro(Parser* parser) {
 static void tipo(Parser* parser) {
     if (match(parser, TOKEN_LBRACKET)) {
         consume(parser, TOKEN_RBRACKET, "Se esperaba ']' para tipo arreglo");
-        tipo(parser); // Recursivo para [][]int, etc.
+        tipo(parser);
     } else {
         tipobase(parser);
     }
@@ -318,7 +333,7 @@ static void comando(Parser* parser) {
     } else if (check(parser, TOKEN_WHILE)) {
         cmdwhile(parser);
     } else if (check(parser, TOKEN_RETURN)) {
-        cmdreturn(parser);
+        cmdreturn_stmt(parser);
     } else if (check(parser, TOKEN_ID)) {
         cmdatrib_o_llamada(parser);
     } else {
@@ -330,20 +345,18 @@ static void comando(Parser* parser) {
 // cmdif -> 'if' exp nl bloque { 'else' 'if' exp nl bloque } ['else' nl bloque] 'end'
 static void cmdif(Parser* parser) {
     consume(parser, TOKEN_IF, "Se esperaba 'if'");
-    exp(parser);
+    expression(parser);
     nl(parser);
     bloque(parser);
     
-    // else if
     while (check(parser, TOKEN_ELSE)) {
         advance(parser); // consumir 'else'
         
         if (match(parser, TOKEN_IF)) {
-            exp(parser);
+            expression(parser);
             nl(parser);
             bloque(parser);
         } else {
-            // else final
             nl(parser);
             bloque(parser);
             break;
@@ -356,19 +369,18 @@ static void cmdif(Parser* parser) {
 // cmdwhile -> 'while' exp nl bloque 'loop'
 static void cmdwhile(Parser* parser) {
     consume(parser, TOKEN_WHILE, "Se esperaba 'while'");
-    exp(parser);
+    expression(parser);
     nl(parser);
     bloque(parser);
     consume(parser, TOKEN_LOOP, "Se esperaba 'loop' al final del while");
 }
 
 // cmdreturn -> 'return' [exp]
-static void cmdreturn(Parser* parser) {
+static void cmdreturn_stmt(Parser* parser) {
     consume(parser, TOKEN_RETURN, "Se esperaba 'return'");
     
-    // Expresión opcional (si no hay NL inmediatamente)
     if (!check(parser, TOKEN_NL) && !check(parser, TOKEN_EOF)) {
-        exp(parser);
+        expression(parser);
     }
 }
 
@@ -377,110 +389,111 @@ static void cmdatrib_o_llamada(Parser* parser) {
     consume(parser, TOKEN_ID, "Se esperaba identificador");
     
     if (match(parser, TOKEN_LPAREN)) {
-        // Es una llamada a función
         listaexp(parser);
         consume(parser, TOKEN_RPAREN, "Se esperaba ')' en llamada a funcion");
     } else {
-        // Es una asignación: var_suffix '=' exp
-        // var_suffix -> { '[' exp ']' }
         while (match(parser, TOKEN_LBRACKET)) {
-            exp(parser);
+            expression(parser);
             consume(parser, TOKEN_RBRACKET, "Se esperaba ']'");
         }
         
         consume(parser, TOKEN_EQ, "Se esperaba '=' en asignacion");
-        exp(parser);
+        expression(parser);
     }
 }
 
 // listaexp -> /* vacio */ | exp { ',' exp }
 static void listaexp(Parser* parser) {
     if (check(parser, TOKEN_RPAREN)) {
-        return; // Lista vacía
+        return;
     }
     
-    exp(parser);
+    expression(parser);
     
     while (match(parser, TOKEN_COMMA)) {
-        exp(parser);
+        expression(parser);
     }
 }
 
 // ==================== EXPRESIONES CON PRECEDENCIA ====================
 
-// exp -> exp_and { 'or' exp_and }
-static void exp(Parser* parser) {
-    exp_and(parser);
+// expression -> expr_or
+static void expression(Parser* parser) {
+    expr_or(parser);
+}
+
+// expr_or -> expr_and { 'or' expr_and }
+static void expr_or(Parser* parser) {
+    expr_and(parser);
     
     while (match(parser, TOKEN_OR)) {
-        exp_and(parser);
+        expr_and(parser);
     }
 }
 
-// exp_and -> exp_rel { 'and' exp_rel }
-static void exp_and(Parser* parser) {
-    exp_rel(parser);
+// expr_and -> expr_rel { 'and' expr_rel }
+static void expr_and(Parser* parser) {
+    expr_rel(parser);
     
     while (match(parser, TOKEN_AND)) {
-        exp_rel(parser);
+        expr_rel(parser);
     }
 }
 
-// exp_rel -> exp_add [ op_rel exp_add ]
-static void exp_rel(Parser* parser) {
-    exp_add(parser);
+// expr_rel -> expr_add [ op_rel expr_add ]
+static void expr_rel(Parser* parser) {
+    expr_add(parser);
     
-    // Operadores relacionales (no asociativos, solo uno)
     if (match(parser, TOKEN_GT) || 
         match(parser, TOKEN_LT) || 
         match(parser, TOKEN_GE) || 
         match(parser, TOKEN_LE) || 
         match(parser, TOKEN_EQ) || 
         match(parser, TOKEN_NE)) {
-        exp_add(parser);
+        expr_add(parser);
     }
 }
 
-// exp_add -> exp_mul { ('+' | '-') exp_mul }
-static void exp_add(Parser* parser) {
-    exp_mul(parser);
+// expr_add -> expr_mul { ('+' | '-') expr_mul }
+static void expr_add(Parser* parser) {
+    expr_mul(parser);
     
     while (match(parser, TOKEN_PLUS) || match(parser, TOKEN_MINUS)) {
-        exp_mul(parser);
+        expr_mul(parser);
     }
 }
 
-// exp_mul -> exp_unary { ('*' | '/') exp_unary }
-static void exp_mul(Parser* parser) {
-    exp_unary(parser);
+// expr_mul -> expr_unary { ('*' | '/') expr_unary }
+static void expr_mul(Parser* parser) {
+    expr_unary(parser);
     
     while (match(parser, TOKEN_STAR) || match(parser, TOKEN_SLASH)) {
-        exp_unary(parser);
+        expr_unary(parser);
     }
 }
 
-// exp_unary -> 'not' exp_unary | '-' exp_unary | exp_postfix
-static void exp_unary(Parser* parser) {
+// expr_unary -> 'not' expr_unary | '-' expr_unary | expr_postfix
+static void expr_unary(Parser* parser) {
     if (match(parser, TOKEN_NOT) || match(parser, TOKEN_MINUS)) {
-        exp_unary(parser); // Recursivo para not not x, --x, etc.
+        expr_unary(parser);
     } else {
-        exp_postfix(parser);
+        expr_postfix(parser);
     }
 }
 
-// exp_postfix -> exp_primary { '[' exp ']' }
-static void exp_postfix(Parser* parser) {
-    exp_primary(parser);
+// expr_postfix -> expr_primary { '[' expression ']' }
+static void expr_postfix(Parser* parser) {
+    expr_primary(parser);
     
     while (match(parser, TOKEN_LBRACKET)) {
-        exp(parser);
+        expression(parser);
         consume(parser, TOKEN_RBRACKET, "Se esperaba ']'");
     }
 }
 
-// exp_primary -> LITNUMERAL | LITSTRING | 'true' | 'false' 
-//              | 'new' '[' exp ']' tipo | '(' exp ')' | ID ['(' listaexp ')']
-static void exp_primary(Parser* parser) {
+// expr_primary -> LITNUMERAL | LITSTRING | 'true' | 'false' 
+//               | 'new' '[' exp ']' tipo | '(' exp ')' | ID ['(' listaexp ')']
+static void expr_primary(Parser* parser) {
     if (match(parser, TOKEN_LITNUMERAL)) {
         return;
     }
@@ -495,20 +508,19 @@ static void exp_primary(Parser* parser) {
     
     if (match(parser, TOKEN_NEW)) {
         consume(parser, TOKEN_LBRACKET, "Se esperaba '[' despues de 'new'");
-        exp(parser);
+        expression(parser);
         consume(parser, TOKEN_RBRACKET, "Se esperaba ']' en expresion new");
         tipo(parser);
         return;
     }
     
     if (match(parser, TOKEN_LPAREN)) {
-        exp(parser);
+        expression(parser);
         consume(parser, TOKEN_RPAREN, "Se esperaba ')'");
         return;
     }
     
     if (match(parser, TOKEN_ID)) {
-        // Puede ser variable o llamada a función
         if (match(parser, TOKEN_LPAREN)) {
             listaexp(parser);
             consume(parser, TOKEN_RPAREN, "Se esperaba ')' en llamada a funcion");
