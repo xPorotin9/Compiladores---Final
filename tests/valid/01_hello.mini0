@@ -1,0 +1,6 @@
+// Programa basico con funcion main
+
+fun main()
+    x: int
+    x = 42
+end

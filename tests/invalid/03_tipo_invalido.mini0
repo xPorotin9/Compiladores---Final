@@ -1,0 +1,5 @@
+// Tipo no reconocido
+
+fun main()
+    x: float
+end

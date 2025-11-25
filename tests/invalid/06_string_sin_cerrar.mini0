@@ -1,0 +1,6 @@
+// String sin comilla de cierre
+
+fun main()
+    s: string
+    s = "hola
+end

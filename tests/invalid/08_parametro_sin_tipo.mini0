@@ -1,0 +1,4 @@
+// Parametro sin tipo
+
+fun foo(x)
+end

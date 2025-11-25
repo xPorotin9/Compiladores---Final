@@ -1,0 +1,10 @@
+// Prueba de todos los tipos basicos
+
+x: int
+y: bool
+z: char
+s: string
+arr: []int
+
+fun main()
+end

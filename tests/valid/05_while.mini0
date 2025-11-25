@@ -1,0 +1,9 @@
+// Bucle while
+
+fun main()
+    i: int
+    i = 0
+    while i < 10
+        i = i + 1
+    loop
+end

@@ -1,0 +1,12 @@
+// Funcion con parametros y retorno
+
+fun suma(a: int, b: int): int
+    result: int
+    result = a + b
+    return result
+end
+
+fun main()
+    x: int
+    x = suma(10, 20)
+end

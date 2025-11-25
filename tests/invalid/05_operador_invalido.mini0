@@ -1,0 +1,6 @@
+// Operador no valido
+
+fun main()
+    x: int
+    x = 2 % 3
+end

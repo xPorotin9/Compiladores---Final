@@ -1,0 +1,16 @@
+// Llamadas a funciones
+
+fun foo(): int
+    return 42
+end
+
+fun bar(x: int)
+    return
+end
+
+fun main()
+    a: int
+    a = foo()
+    bar(a)
+    bar(foo())
+end

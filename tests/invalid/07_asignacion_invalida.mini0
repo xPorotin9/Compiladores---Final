@@ -1,0 +1,6 @@
+// Asignacion mal formada
+
+fun main()
+    x: int
+    x = = 5
+end

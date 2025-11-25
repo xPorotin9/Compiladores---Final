@@ -1,0 +1,8 @@
+// Manejo de arreglos
+
+fun main()
+    arr: []int
+    arr = new [10] int
+    arr[0] = 42
+    arr[1] = arr[0] + 1
+end

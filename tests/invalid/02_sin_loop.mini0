@@ -1,0 +1,6 @@
+// Falta 'loop' en while
+
+fun main()
+    while true
+        x: int
+end

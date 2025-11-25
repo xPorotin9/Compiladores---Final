@@ -1,0 +1,4 @@
+// Falta 'end' en funcion
+
+fun main()
+    x: int

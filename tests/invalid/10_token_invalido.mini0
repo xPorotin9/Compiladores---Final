@@ -1,0 +1,6 @@
+// Caracter no reconocido
+
+fun main()
+    x: int
+    x = 5 @ 3
+end

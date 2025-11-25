@@ -1,0 +1,6 @@
+// Expresion incompleta
+
+fun main()
+    x: int
+    x = 2 +
+end

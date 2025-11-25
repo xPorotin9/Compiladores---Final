@@ -1,0 +1,16 @@
+# Build artifacts
+bin/
+build/
+*.o
+*.obj
+*.exe
+*.out
+
+# Editor/project files
+.vscode/
+*.swp
+*.swo
+*.DS_Store
+
+# Logs
+*.log

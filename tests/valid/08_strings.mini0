@@ -1,0 +1,7 @@
+// Strings y escapes
+
+fun main()
+    s: string
+    s = "Hola Mundo"
+    s = "Con escape: \n\t\"\\"
+end
