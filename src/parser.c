@@ -22,9 +22,6 @@ static void error_at(Parser* parser, Token* token, const char* message) {
     
     fprintf(stderr, ": %s\n", message);
 }
-
-// ... resto del código del parser que ya te di
-
 static void error_at_current(Parser* parser, const char* message) {
     error_at(parser, &parser->current, message);
 }
